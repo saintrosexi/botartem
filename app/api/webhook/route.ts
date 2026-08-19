@@ -58,8 +58,8 @@ export async function POST(req: NextRequest) {
     const { shouldReply, triggerType } = evaluateTriggerType(
       message,
       botUsername,
-      settings.triggerKeywords || ["артём", "артем", "тема", "тёма", "artem"],
-      isGroup ? (settings.randomReplyChance ?? 8) : 100
+      settings.triggerKeywords || ["артём", "артем", "тёма", "artem", "артёмка", "артемка", "артемий", "тёмик", "темик"],
+      isGroup ? (Number(settings.randomReplyChance) || 0) : 100
     );
 
     if (!shouldReply || !triggerType) {
@@ -104,6 +104,11 @@ export async function POST(req: NextRequest) {
       },
       settings
     );
+
+    // If Gemini decided Artem should stay silent in this group context
+    if (!botReply || botReply.includes("[SILENT]") || botReply.includes("[SKIP]")) {
+      return NextResponse.json({ ok: true, ignored: "silent_decision" });
+    }
 
     // Send reply back to Telegram
     // In group, if it was a direct reply or keyword, we can reply directly to the message

@@ -1,5 +1,8 @@
 import { BotSettings, LogEntry, ChatMetadata } from "./types";
 import { DEFAULT_SYSTEM_PROMPT, DEFAULT_CHECKINS } from "./default-prompt";
+import fs from "fs";
+
+const TMP_CONFIG_PATH = "/tmp/artem_settings.json";
 
 // Default settings object
 const initialSettings: BotSettings = {
@@ -7,8 +10,8 @@ const initialSettings: BotSettings = {
   temperature: 0.95,
   model: "gemini-3.6-flash",
   botName: "Артём",
-  triggerKeywords: ["артём", "артем", "тёма", "тема", "artem", "артёмка", "артемка"],
-  randomReplyChance: 8, // 8% chance to chime into active chat unprovoked
+  triggerKeywords: ["артём", "артем", "тёма", "artem", "артёмка", "артемка", "артемий", "тёмик", "темик"],
+  randomReplyChance: 0, // 0% by default so he only replies on name, reply, or @mention
   sarcasmLevel: 4,
   takeSidesInArguments: true,
   maxContextMessages: 15,
@@ -39,6 +42,26 @@ if (!global.__ARTEM_LOGS__) {
 }
 if (!global.__ARTEM_CHATS__) {
   global.__ARTEM_CHATS__ = {};
+}
+
+function getLocalTmpConfig(): Partial<BotSettings> | null {
+  try {
+    if (fs.existsSync(TMP_CONFIG_PATH)) {
+      const raw = fs.readFileSync(TMP_CONFIG_PATH, "utf-8");
+      return JSON.parse(raw);
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+function saveLocalTmpConfig(settings: BotSettings): void {
+  try {
+    fs.writeFileSync(TMP_CONFIG_PATH, JSON.stringify(settings), "utf-8");
+  } catch {
+    // ignore
+  }
 }
 
 // Check for Upstash / Vercel KV REST API
@@ -85,17 +108,21 @@ export function isKvConfigured(): boolean {
 }
 
 export async function getSettings(): Promise<BotSettings> {
-  // Try remote KV if available
-  const remote = await kvGet<Partial<BotSettings>>("artem_settings");
-  if (remote) {
+  // 1. Try remote KV
+  let stored = await kvGet<Partial<BotSettings>>("artem_settings");
+  // 2. If no KV, try /tmp file
+  if (!stored) {
+    stored = getLocalTmpConfig();
+  }
+
+  if (stored) {
     global.__ARTEM_SETTINGS__ = {
       ...initialSettings,
       ...global.__ARTEM_SETTINGS__,
-      ...remote,
-      // fallback to env if remote token is empty
-      telegramToken: remote.telegramToken || process.env.TELEGRAM_BOT_TOKEN || global.__ARTEM_SETTINGS__?.telegramToken || "",
-      geminiApiKey: remote.geminiApiKey || process.env.GEMINI_API_KEY || global.__ARTEM_SETTINGS__?.geminiApiKey || "",
-      adminPassword: remote.adminPassword || process.env.ADMIN_PASSWORD || global.__ARTEM_SETTINGS__?.adminPassword || "artem123",
+      ...stored,
+      telegramToken: stored.telegramToken || process.env.TELEGRAM_BOT_TOKEN || global.__ARTEM_SETTINGS__?.telegramToken || "",
+      geminiApiKey: stored.geminiApiKey || process.env.GEMINI_API_KEY || global.__ARTEM_SETTINGS__?.geminiApiKey || "",
+      adminPassword: stored.adminPassword || process.env.ADMIN_PASSWORD || global.__ARTEM_SETTINGS__?.adminPassword || "artem123",
     };
   }
 
@@ -121,6 +148,10 @@ export async function updateSettings(newSettings: Partial<BotSettings>): Promise
   };
   global.__ARTEM_SETTINGS__ = updated;
 
+  // Persist to /tmp file
+  saveLocalTmpConfig(updated);
+
+  // Persist to remote KV
   await kvSet("artem_settings", updated);
   return updated;
 }
