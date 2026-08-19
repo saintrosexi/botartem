@@ -36,6 +36,8 @@ export interface LogEntry {
   senderUsername?: string;
   userMessage: string;
   botReply?: string;
+  isError?: boolean;
+  errorMessage?: string;
   triggerType: "direct" | "mention" | "name_keyword" | "reply" | "random_burst" | "cron_checkin" | "manual_test";
 }
 

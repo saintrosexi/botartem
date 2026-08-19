@@ -175,7 +175,17 @@ export function RecentLogs({ logs, chats, loading, onRefresh }: RecentLogsProps)
                   <div className="whitespace-pre-wrap">{log.userMessage}</div>
                 </div>
 
-                {log.botReply && (
+                {log.isError ? (
+                  <div className="bg-red-950/40 border border-red-700/60 rounded-lg p-3 text-red-200 space-y-1">
+                    <div className="text-[11px] text-red-400 font-bold flex items-center gap-1.5">
+                      <ShieldAlert className="w-4 h-4 text-red-400 shrink-0" />
+                      <span>Ошибка (бот не смог отправить ответ):</span>
+                    </div>
+                    <div className="font-mono text-[11px] text-red-300 whitespace-pre-wrap bg-red-950/60 p-2 rounded border border-red-900/50">
+                      {log.errorMessage || log.botReply}
+                    </div>
+                  </div>
+                ) : log.botReply && (
                   <div className="bg-indigo-950/30 border border-indigo-900/50 rounded-lg p-2.5 text-indigo-100">
                     <div className="text-[10px] text-indigo-400 font-semibold mb-0.5">Ответ Артёма:</div>
                     <div className="whitespace-pre-wrap">{log.botReply}</div>

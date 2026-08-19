@@ -94,16 +94,34 @@ export async function POST(req: NextRequest) {
 
     // Generate Artem's reply via Gemini
     const isReplyToBot = message.reply_to_message?.from?.is_bot || false;
-    const botReply = await generateArtemReply(
-      context,
-      {
+    let botReply = "";
+    try {
+      botReply = await generateArtemReply(
+        context,
+        {
+          senderName,
+          text: userText,
+          isReplyToBot,
+          isGroup,
+        },
+        settings
+      );
+    } catch (genError: any) {
+      console.error("Gemini generation error:", genError);
+      await addLog({
+        chatId,
+        chatTitle: message.chat.title,
+        chatType: message.chat.type,
         senderName,
-        text: userText,
-        isReplyToBot,
-        isGroup,
-      },
-      settings
-    );
+        senderUsername: message.from?.username,
+        userMessage: userText,
+        botReply: `⚠️ Ошибка Gemini API: ${genError.message}`,
+        isError: true,
+        errorMessage: genError.message,
+        triggerType,
+      });
+      return NextResponse.json({ ok: false, error: genError.message }, { status: 200 });
+    }
 
     // If Gemini decided Artem should stay silent in this group context
     if (!botReply || botReply.includes("[SILENT]") || botReply.includes("[SKIP]")) {
@@ -113,9 +131,26 @@ export async function POST(req: NextRequest) {
     // Send reply back to Telegram
     // In group, if it was a direct reply or keyword, we can reply directly to the message
     const replyToId = isGroup ? message.message_id : undefined;
-    await sendTelegramMessage(token, chatId, botReply, replyToId);
+    try {
+      await sendTelegramMessage(token, chatId, botReply, replyToId);
+    } catch (sendError: any) {
+      console.error("Telegram send error:", sendError);
+      await addLog({
+        chatId,
+        chatTitle: message.chat.title,
+        chatType: message.chat.type,
+        senderName,
+        senderUsername: message.from?.username,
+        userMessage: userText,
+        botReply: `⚠️ Ошибка отправки в Telegram: ${sendError.message}`,
+        isError: true,
+        errorMessage: sendError.message,
+        triggerType,
+      });
+      return NextResponse.json({ ok: false, error: sendError.message }, { status: 200 });
+    }
 
-    // Save interaction in logs
+    // Save successful interaction in logs
     await addLog({
       chatId,
       chatTitle: message.chat.title,
@@ -129,7 +164,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, reply: botReply });
   } catch (error: any) {
-    console.error("Webhook processing error:", error);
+    console.error("Webhook processing general error:", error);
     return NextResponse.json({ ok: false, error: error.message }, { status: 200 });
   }
 }
