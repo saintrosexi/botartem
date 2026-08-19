@@ -110,11 +110,11 @@ export async function generateArtemReply(
       return await callGeminiApi(model, apiKey, payload);
     } catch (err: any) {
       lastError = err;
-      if (err.status === 404 || err.status === 400) {
-        console.warn(`Model ${model} failed (${err.status}), attempting fallback...`);
+      // If 404 (not found), 400 (unsupported), 503 (high demand), 500 or 429, try next fallback model
+      if (err.status === 404 || err.status === 400 || err.status === 503 || err.status === 500 || err.status === 429) {
+        console.warn(`Model ${model} returned status ${err.status}, trying fallback model...`);
         continue;
       }
-      // If it's auth/quota error (401, 403, 429), throw immediately
       throw err;
     }
   }
@@ -160,7 +160,7 @@ export async function generateCheckinMessage(
       return await callGeminiApi(model, apiKey, payload);
     } catch (err: any) {
       lastError = err;
-      if (err.status === 404 || err.status === 400) {
+      if (err.status === 404 || err.status === 400 || err.status === 503 || err.status === 500 || err.status === 429) {
         continue;
       }
       throw err;

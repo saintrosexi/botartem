@@ -22,19 +22,28 @@ export function BotApiConfig({
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [showTokens, setShowTokens] = useState(false);
+  // Auto-fill real domain on load if placeholder is still set
+  React.useEffect(() => {
+    if (typeof window !== "undefined") {
+      if (!settings.webhookUrl || settings.webhookUrl.includes("your-domain.vercel.app")) {
+        const autoUrl = `${window.location.origin}/api/webhook`;
+        onChange({ webhookUrl: autoUrl });
+      }
+    }
+  }, []);
 
   const handleSetWebhook = async () => {
     try {
       setLoadingAction("setWebhook");
       setFeedback(null);
       let targetUrl = settings.webhookUrl;
-      if (!targetUrl && typeof window !== "undefined") {
+      if ((!targetUrl || targetUrl.includes("your-domain.vercel.app")) && typeof window !== "undefined") {
         targetUrl = `${window.location.origin}/api/webhook`;
         onChange({ webhookUrl: targetUrl });
       }
 
-      if (!targetUrl) {
-        setFeedback({ type: "error", text: "Укажите URL вебхука (например https://your-domain.vercel.app/api/webhook)" });
+      if (!targetUrl || targetUrl.includes("your-domain.vercel.app")) {
+        setFeedback({ type: "error", text: "Укажите реальный адрес вашего сайта на Vercel вместо your-domain.vercel.app" });
         return;
       }
 
