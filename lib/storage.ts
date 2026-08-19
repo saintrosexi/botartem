@@ -3,6 +3,8 @@ import { DEFAULT_SYSTEM_PROMPT, DEFAULT_CHECKINS } from "./default-prompt";
 import fs from "fs";
 
 const TMP_CONFIG_PATH = "/tmp/artem_settings.json";
+const TMP_LOGS_PATH = "/tmp/artem_logs.json";
+const TMP_CHATS_PATH = "/tmp/artem_chats.json";
 
 // Default settings object
 const initialSettings: BotSettings = {
@@ -11,7 +13,7 @@ const initialSettings: BotSettings = {
   model: "gemini-3.6-flash",
   botName: "Артём",
   triggerKeywords: ["артём", "артем", "тёма", "artem", "артёмка", "артемка", "артемий", "тёмик", "темик"],
-  randomReplyChance: 0, // 0% by default so he only replies on name, reply, or @mention
+  randomReplyChance: 0,
   sarcasmLevel: 4,
   takeSidesInArguments: true,
   maxContextMessages: 15,
@@ -44,10 +46,10 @@ if (!global.__ARTEM_CHATS__) {
   global.__ARTEM_CHATS__ = {};
 }
 
-function getLocalTmpConfig(): Partial<BotSettings> | null {
+function readJsonFile<T>(filePath: string): T | null {
   try {
-    if (fs.existsSync(TMP_CONFIG_PATH)) {
-      const raw = fs.readFileSync(TMP_CONFIG_PATH, "utf-8");
+    if (fs.existsSync(filePath)) {
+      const raw = fs.readFileSync(filePath, "utf-8");
       return JSON.parse(raw);
     }
   } catch {
@@ -56,9 +58,9 @@ function getLocalTmpConfig(): Partial<BotSettings> | null {
   return null;
 }
 
-function saveLocalTmpConfig(settings: BotSettings): void {
+function writeJsonFile<T>(filePath: string, data: T): void {
   try {
-    fs.writeFileSync(TMP_CONFIG_PATH, JSON.stringify(settings), "utf-8");
+    fs.writeFileSync(filePath, JSON.stringify(data), "utf-8");
   } catch {
     // ignore
   }
@@ -112,7 +114,7 @@ export async function getSettings(): Promise<BotSettings> {
   let stored = await kvGet<Partial<BotSettings>>("artem_settings");
   // 2. If no KV, try /tmp file
   if (!stored) {
-    stored = getLocalTmpConfig();
+    stored = readJsonFile<Partial<BotSettings>>(TMP_CONFIG_PATH);
   }
 
   if (stored) {
@@ -149,7 +151,7 @@ export async function updateSettings(newSettings: Partial<BotSettings>): Promise
   global.__ARTEM_SETTINGS__ = updated;
 
   // Persist to /tmp file
-  saveLocalTmpConfig(updated);
+  writeJsonFile(TMP_CONFIG_PATH, updated);
 
   // Persist to remote KV
   await kvSet("artem_settings", updated);
@@ -163,14 +165,34 @@ export async function addLog(entry: Omit<LogEntry, "id" | "timestamp">): Promise
     timestamp: Date.now(),
   };
 
-  if (!global.__ARTEM_LOGS__) global.__ARTEM_LOGS__ = [];
+  // Load existing from disk if memory is empty
+  if (!global.__ARTEM_LOGS__ || global.__ARTEM_LOGS__.length === 0) {
+    const diskLogs = readJsonFile<LogEntry[]>(TMP_LOGS_PATH);
+    if (diskLogs && Array.isArray(diskLogs)) {
+      global.__ARTEM_LOGS__ = diskLogs;
+    } else {
+      global.__ARTEM_LOGS__ = [];
+    }
+  }
+
   global.__ARTEM_LOGS__.unshift(newEntry);
   if (global.__ARTEM_LOGS__.length > 150) {
     global.__ARTEM_LOGS__ = global.__ARTEM_LOGS__.slice(0, 150);
   }
 
+  // Persist logs to /tmp
+  writeJsonFile(TMP_LOGS_PATH, global.__ARTEM_LOGS__);
+
   // Register chat metadata
-  if (!global.__ARTEM_CHATS__) global.__ARTEM_CHATS__ = {};
+  if (!global.__ARTEM_CHATS__ || Object.keys(global.__ARTEM_CHATS__).length === 0) {
+    const diskChats = readJsonFile<Record<string, ChatMetadata>>(TMP_CHATS_PATH);
+    if (diskChats) {
+      global.__ARTEM_CHATS__ = diskChats;
+    } else {
+      global.__ARTEM_CHATS__ = {};
+    }
+  }
+
   const chatIdStr = entry.chatId.toString();
   const existingChat = global.__ARTEM_CHATS__[chatIdStr];
   global.__ARTEM_CHATS__[chatIdStr] = {
@@ -180,6 +202,9 @@ export async function addLog(entry: Omit<LogEntry, "id" | "timestamp">): Promise
     lastActive: Date.now(),
     messageCount: (existingChat?.messageCount || 0) + 1,
   };
+
+  // Persist chats to /tmp
+  writeJsonFile(TMP_CHATS_PATH, global.__ARTEM_CHATS__);
 
   // Sync to KV asynchronously
   kvSet("artem_logs", global.__ARTEM_LOGS__.slice(0, 50)).catch(() => {});
@@ -191,6 +216,10 @@ export async function getLogs(): Promise<LogEntry[]> {
   if (remote && Array.isArray(remote)) {
     return remote;
   }
+  const diskLogs = readJsonFile<LogEntry[]>(TMP_LOGS_PATH);
+  if (diskLogs && Array.isArray(diskLogs)) {
+    return diskLogs;
+  }
   return global.__ARTEM_LOGS__ || [];
 }
 
@@ -198,6 +227,10 @@ export async function getRegisteredChats(): Promise<ChatMetadata[]> {
   const remote = await kvGet<Record<string, ChatMetadata>>("artem_chats");
   if (remote) {
     return Object.values(remote).sort((a, b) => b.lastActive - a.lastActive);
+  }
+  const diskChats = readJsonFile<Record<string, ChatMetadata>>(TMP_CHATS_PATH);
+  if (diskChats) {
+    return Object.values(diskChats).sort((a, b) => b.lastActive - a.lastActive);
   }
   return Object.values(global.__ARTEM_CHATS__ || {}).sort((a, b) => b.lastActive - a.lastActive);
 }

@@ -7,12 +7,35 @@ export interface ContextMessage {
   isBot?: boolean;
 }
 
-const CANDIDATE_MODELS = [
+const DEFAULT_FALLBACK_MODELS = [
+  "gemini-3.6-flash",
+  "gemini-3.6-pro",
+  "gemini-2.5-flash",
   "gemini-2.0-flash",
   "gemini-1.5-flash",
   "gemini-1.5-pro",
-  "gemini-pro",
 ];
+
+export async function getDynamicModels(apiKey: string): Promise<string[]> {
+  try {
+    const cleanKey = (apiKey || "").trim();
+    if (!cleanKey) return DEFAULT_FALLBACK_MODELS;
+
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${cleanKey}`);
+    if (res.ok) {
+      const data = await res.json();
+      const list = (data.models || [])
+        .filter((m: any) => m.supportedGenerationMethods?.includes("generateContent"))
+        .map((m: any) => m.name.replace(/^models\//, ""));
+      if (list.length > 0) {
+        return list;
+      }
+    }
+  } catch (e) {
+    console.warn("Could not fetch dynamic models from Google, using default list:", e);
+  }
+  return DEFAULT_FALLBACK_MODELS;
+}
 
 async function callSdkGenerate(
   modelName: string,
@@ -73,7 +96,7 @@ export async function generateArtemReply(
     throw new Error("API ключ Gemini не настроен. Укажите его в панели управления или в .env файле.");
   }
 
-  const requestedModel = (settings.model || "gemini-2.0-flash").trim();
+  const requestedModel = (settings.model || "gemini-3.6-flash").trim();
 
   // System prompt and context
   let systemInstructionText = settings.systemPrompt;
@@ -102,9 +125,12 @@ export async function generateArtemReply(
   }
   promptBody += `\nТвой ответ (как Артём):`;
 
+  // Query dynamic available models
+  const dynamicList = await getDynamicModels(apiKey);
   const modelsToTry = [
     requestedModel,
-    ...CANDIDATE_MODELS.filter((m) => m !== requestedModel),
+    ...dynamicList.filter((m) => m !== requestedModel),
+    ...DEFAULT_FALLBACK_MODELS.filter((m) => m !== requestedModel && !dynamicList.includes(m)),
   ];
 
   let lastError: any = null;
@@ -147,8 +173,8 @@ export async function generateArtemReply(
 
 export async function testGeminiApiKey(
   apiKey: string,
-  modelName: string = "gemini-2.0-flash"
-): Promise<{ ok: boolean; modelUsed: string; reply: string; durationMs: number; error?: string }> {
+  modelName: string = "gemini-3.6-flash"
+): Promise<{ ok: boolean; modelUsed: string; reply: string; durationMs: number; error?: string; availableModels?: string[] }> {
   const cleanKey = apiKey.trim();
   if (!cleanKey) {
     return { ok: false, modelUsed: modelName, reply: "", durationMs: 0, error: "Ключ API пуст" };
@@ -157,9 +183,11 @@ export async function testGeminiApiKey(
   const startTime = Date.now();
   const testPrompt = "Ответь одним коротким словом 'Работает' если ты на связи.";
 
+  const dynamicList = await getDynamicModels(cleanKey);
   const modelsToTry = [
     modelName,
-    ...CANDIDATE_MODELS.filter((m) => m !== modelName),
+    ...dynamicList.filter((m) => m !== modelName),
+    ...DEFAULT_FALLBACK_MODELS.filter((m) => m !== modelName && !dynamicList.includes(m)),
   ];
 
   let lastErrorMsg = "";
@@ -173,7 +201,7 @@ export async function testGeminiApiKey(
         0.5
       );
       const durationMs = Date.now() - startTime;
-      return { ok: true, modelUsed: m, reply: res, durationMs };
+      return { ok: true, modelUsed: m, reply: res, durationMs, availableModels: dynamicList };
     } catch (e: any) {
       lastErrorMsg = e.message;
       try {
@@ -183,7 +211,7 @@ export async function testGeminiApiKey(
         };
         const res = await callDirectRestApi(m, cleanKey, payload);
         const durationMs = Date.now() - startTime;
-        return { ok: true, modelUsed: m, reply: res, durationMs };
+        return { ok: true, modelUsed: m, reply: res, durationMs, availableModels: dynamicList };
       } catch (e2: any) {
         lastErrorMsg = e2.message;
       }
@@ -196,6 +224,7 @@ export async function testGeminiApiKey(
     reply: "",
     durationMs: Date.now() - startTime,
     error: lastErrorMsg,
+    availableModels: dynamicList,
   };
 }
 
@@ -207,13 +236,15 @@ export async function generateCheckinMessage(
   const apiKey = (settings.geminiApiKey || process.env.GEMINI_API_KEY || "").trim();
   if (!apiKey) throw new Error("Gemini API key is not configured");
 
-  const requestedModel = settings.model || "gemini-2.0-flash";
+  const requestedModel = settings.model || "gemini-3.6-flash";
   const systemPrompt = settings.systemPrompt + `\n\nЗадача: написать спонтанное живое сообщение в чат "${chatTitle}" от лица Артёма. 1-2 предложения, строго в характере.`;
   const promptBody = `Тематика чек-ина: ${promptHint}\nНапиши короткую реплику в чат:`;
 
+  const dynamicList = await getDynamicModels(apiKey);
   const modelsToTry = [
     requestedModel,
-    ...CANDIDATE_MODELS.filter((m) => m !== requestedModel),
+    ...dynamicList.filter((m) => m !== requestedModel),
+    ...DEFAULT_FALLBACK_MODELS.filter((m) => m !== requestedModel && !dynamicList.includes(m)),
   ];
 
   let lastError: any = null;
