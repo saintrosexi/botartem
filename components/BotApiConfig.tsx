@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { BotSettings } from "@/lib/types";
-import { Key, Bot, Globe, Shield, CheckCircle2, AlertCircle, RefreshCw, Trash2, ExternalLink } from "lucide-react";
+import { Key, Bot, Globe, Shield, CheckCircle2, AlertCircle, RefreshCw, Trash2, ExternalLink, Send } from "lucide-react";
 
 interface BotApiConfigProps {
   settings: BotSettings;
@@ -251,6 +251,95 @@ export function BotApiConfig({
               )}
             </>
           )}
+        </div>
+      </div>
+
+      {/* Test Message Directly to Telegram */}
+      <div className="bg-[#111827] border border-gray-800/80 rounded-2xl p-5 shadow-sm space-y-4">
+        <div className="flex items-center gap-2 border-b border-gray-800 pb-3">
+          <Send className="w-5 h-5 text-indigo-400" />
+          <h2 className="text-base font-semibold text-white">Тест прямой отправки в Telegram</h2>
+        </div>
+
+        <p className="text-xs text-gray-400">
+          Отправьте тестовое сообщение в ваш чат или личку с ботом, чтобы убедиться, что Telegram Bot Token работает и бот может писать сообщения.
+        </p>
+
+        <div className="flex flex-col sm:flex-row items-center gap-2">
+          <input
+            type="text"
+            placeholder="ID чата или ваш User ID (например: 123456789 или -100...)"
+            id="test_chat_id_input"
+            className="flex-1 w-full bg-[#090d16] border border-gray-700/80 focus:border-indigo-500 rounded-xl px-3.5 py-2.5 text-xs text-gray-200 font-mono focus:outline-none transition-all"
+          />
+          <button
+            type="button"
+            onClick={async () => {
+              const input = document.getElementById("test_chat_id_input") as HTMLInputElement;
+              const chatId = input?.value?.trim();
+              if (!chatId) {
+                alert("Введите ID чата");
+                return;
+              }
+              setLoadingAction("testMsg");
+              try {
+                const res = await fetch("/api/telegram", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ action: "testMessage", chatId }),
+                });
+                const data = await res.json();
+                if (data.ok) {
+                  alert("✅ Сообщение успешно отправлено ботом в Telegram!");
+                } else {
+                  alert(`❌ Ошибка отправки: ${data.error}`);
+                }
+              } catch (e: any) {
+                alert(`❌ Ошибка: ${e.message}`);
+              } finally {
+                setLoadingAction(null);
+              }
+            }}
+            disabled={loadingAction === "testMsg"}
+            className="flex items-center gap-1.5 px-4 py-2.5 bg-gray-800 hover:bg-gray-700 text-white rounded-xl text-xs font-semibold border border-gray-700 transition-all disabled:opacity-50"
+          >
+            <Send className="w-3.5 h-3.5" />
+            <span>{loadingAction === "testMsg" ? "Отправка..." : "Отправить тест"}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Checklist for Groups and PM */}
+      <div className="bg-[#111827] border border-gray-800/80 rounded-2xl p-5 shadow-sm space-y-3">
+        <div className="flex items-center gap-2 border-b border-gray-800 pb-3">
+          <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+          <h2 className="text-base font-semibold text-white">Чек-лист: почему бот может не отвечать в Telegram</h2>
+        </div>
+
+        <div className="space-y-2.5 text-xs text-gray-300">
+          <div className="flex items-start gap-2.5">
+            <span className="w-5 h-5 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-800 flex items-center justify-center font-bold text-[10px] shrink-0 mt-0.5">1</span>
+            <div>
+              <strong className="text-white">Нажата ли кнопка «Установить Webhook»?</strong>
+              <p className="text-gray-400">Убедитесь, что в блоке выше статус показывает <span className="text-emerald-400 font-semibold">«Привязан ✅»</span>. Без этого Telegram не знает адрес вашего сайта на Vercel.</p>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-2.5">
+            <span className="w-5 h-5 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-800 flex items-center justify-center font-bold text-[10px] shrink-0 mt-0.5">2</span>
+            <div>
+              <strong className="text-white">Внесены ли ключи в Vercel Environment Variables?</strong>
+              <p className="text-gray-400">В настройках проекта на Vercel (Settings -&gt; Environment Variables) должны быть указаны <code className="text-indigo-300">TELEGRAM_BOT_TOKEN</code> и <code className="text-indigo-300">GEMINI_API_KEY</code>, чтобы они были доступны всем серверам.</p>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-2.5">
+            <span className="w-5 h-5 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-800 flex items-center justify-center font-bold text-[10px] shrink-0 mt-0.5">3</span>
+            <div>
+              <strong className="text-white">Для бесед и групп (Privacy Mode):</strong>
+              <p className="text-gray-400">По умолчанию Telegram скрывает сообщения бесед от ботов. Откройте в Telegram <a href="https://t.me/BotFather" target="_blank" rel="noreferrer" className="text-indigo-400 underline">@BotFather</a>, отправьте команду <code className="text-indigo-300">/setprivacy</code> -&gt; выберите вашего бота -&gt; выберите <code className="text-emerald-400">Disable</code> (или сделайте бота администратором группы).</p>
+            </div>
+          </div>
         </div>
       </div>
 
