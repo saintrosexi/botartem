@@ -44,19 +44,29 @@ export async function getBotInfo(token: string) {
 
 export async function sendTelegramMessage(
   token: string,
-  chatId: number,
+  chatId: number | string,
   text: string,
   replyToMessageId?: number
 ) {
+  const cleanToken = (token || "").trim();
+  if (!cleanToken) {
+    throw new Error("Telegram Bot Token не задан");
+  }
+
+  let cleanText = (text || "").trim();
+  if (cleanText.length > 4000) {
+    cleanText = cleanText.substring(0, 4000);
+  }
+
   const payload: Record<string, any> = {
     chat_id: chatId,
-    text,
+    text: cleanText,
   };
   if (replyToMessageId) {
     payload.reply_to_message_id = replyToMessageId;
   }
 
-  const res = await fetch(`${TG_API_BASE}/bot${token}/sendMessage`, {
+  const res = await fetch(`${TG_API_BASE}/bot${cleanToken}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -64,7 +74,7 @@ export async function sendTelegramMessage(
 
   if (!res.ok) {
     const error = await res.json().catch(() => ({ description: res.statusText }));
-    throw new Error(error.description || "Failed to send message");
+    throw new Error(`Telegram ошибка (${res.status}): ${error.description || "Не удалось отправить сообщение"}`);
   }
   return await res.json();
 }

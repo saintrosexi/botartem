@@ -1,3 +1,4 @@
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { BotSettings } from "./types";
 
 export interface ContextMessage {
@@ -6,19 +7,42 @@ export interface ContextMessage {
   isBot?: boolean;
 }
 
-const FALLBACK_MODELS = [
+const CANDIDATE_MODELS = [
   "gemini-2.0-flash",
   "gemini-1.5-flash",
   "gemini-1.5-pro",
-  "gemini-3.6-flash",
+  "gemini-pro",
 ];
 
-async function callGeminiApi(
-  model: string,
+async function callSdkGenerate(
+  modelName: string,
+  apiKey: string,
+  systemInstructionText: string,
+  promptBody: string,
+  temperature: number
+): Promise<string> {
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({
+    model: modelName,
+    systemInstruction: systemInstructionText,
+    generationConfig: {
+      temperature: Math.min(Math.max(temperature || 0.95, 0.0), 2.0),
+      maxOutputTokens: 2048,
+    },
+  });
+
+  const result = await model.generateContent(promptBody);
+  const response = await result.response;
+  const text = response.text();
+  return cleanArtemOutput(text);
+}
+
+async function callDirectRestApi(
+  modelName: string,
   apiKey: string,
   payload: any
 ): Promise<string> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelName)}:generateContent?key=${apiKey}`;
   const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -27,7 +51,7 @@ async function callGeminiApi(
 
   if (!response.ok) {
     const errText = await response.text();
-    const err = new Error(`Gemini API error (${response.status}): ${errText}`);
+    const err = new Error(`Gemini API (${modelName} status ${response.status}): ${errText}`);
     (err as any).status = response.status;
     (err as any).errorBody = errText;
     throw err;
@@ -44,21 +68,21 @@ export async function generateArtemReply(
   incomingMessage: { senderName: string; text: string; isReplyToBot?: boolean; isGroup?: boolean },
   settings: BotSettings
 ): Promise<string> {
-  const apiKey = settings.geminiApiKey || process.env.GEMINI_API_KEY;
+  const apiKey = (settings.geminiApiKey || process.env.GEMINI_API_KEY || "").trim();
   if (!apiKey) {
-    throw new Error("Gemini API key is not configured. Please set it in the Admin Dashboard or .env file.");
+    throw new Error("API ключ Gemini не настроен. Укажите его в панели управления или в .env файле.");
   }
 
-  const requestedModel = settings.model || "gemini-3.6-flash";
+  const requestedModel = (settings.model || "gemini-2.0-flash").trim();
 
-  // Build the complete system prompt
-  let enhancedSystemPrompt = settings.systemPrompt;
-  enhancedSystemPrompt += `\n\n[КОНТЕКСТ ТЕКУЩЕГО СООБЩЕНИЯ]:
+  // System prompt and context
+  let systemInstructionText = settings.systemPrompt;
+  systemInstructionText += `\n\n[КОНТЕКСТ ТЕКУЩЕГО СООБЩЕНИЯ]:
 - Тип чата: ${incomingMessage.isGroup ? "Групповой чат (беседа)" : "Личные сообщения (ЛС)"}.
-- Имя автора последнего сообщения: "${incomingMessage.senderName}".
-- Помни: общайся живо и естественно как реальный парень Артём, без клише и официоза.`;
+- Имя собеседника: "${incomingMessage.senderName}".
+- Помни: общайся живо, по-настоящему, без шаблонов ассистента. Если в беседе ответ неуместен, ответь ровно [SILENT]`;
 
-  // Build conversation history format
+  // Format conversation history
   let promptBody = "";
   if (context.length > 0) {
     promptBody += "--- Последние сообщения в чате (контекст):\n";
@@ -74,49 +98,105 @@ export async function generateArtemReply(
 
   promptBody += `Сообщение от ${incomingMessage.senderName}: "${incomingMessage.text}"\n`;
   if (incomingMessage.isReplyToBot) {
-    promptBody += `(Это сообщение является ответом на твою предыдущую реплику)\n`;
+    promptBody += `(Это сообщение является прямым ответом на твою реплику)\n`;
   }
   promptBody += `\nТвой ответ (как Артём):`;
 
-  const payload = {
-    contents: [
-      {
-        role: "user",
-        parts: [{ text: promptBody }],
-      },
-    ],
-    systemInstruction: {
-      parts: [{ text: enhancedSystemPrompt }],
-    },
-    generationConfig: {
-      temperature: Math.min(Math.max(Number(settings.temperature) || 0.95, 0.0), 2.0),
-      maxOutputTokens: 2048,
-      topP: 0.95,
-    },
-  };
-
-  // Try requested model first, then fallback models in order
   const modelsToTry = [
     requestedModel,
-    ...FALLBACK_MODELS.filter((m) => m !== requestedModel),
+    ...CANDIDATE_MODELS.filter((m) => m !== requestedModel),
   ];
 
   let lastError: any = null;
-  for (const model of modelsToTry) {
+
+  for (const modelName of modelsToTry) {
     try {
-      return await callGeminiApi(model, apiKey, payload);
-    } catch (err: any) {
-      lastError = err;
-      // If 404 (not found), 400 (unsupported), 503 (high demand), 500 or 429, try next fallback model
-      if (err.status === 404 || err.status === 400 || err.status === 503 || err.status === 500 || err.status === 429) {
-        console.warn(`Model ${model} returned status ${err.status}, trying fallback model...`);
+      // 1. Try via official SDK
+      return await callSdkGenerate(
+        modelName,
+        apiKey,
+        systemInstructionText,
+        promptBody,
+        Number(settings.temperature) || 0.95
+      );
+    } catch (sdkError: any) {
+      console.warn(`SDK attempt for ${modelName} failed (${sdkError.message}), trying REST endpoint...`);
+      lastError = sdkError;
+      
+      // 2. Fallback to direct REST call
+      try {
+        const payload = {
+          contents: [{ role: "user", parts: [{ text: promptBody }] }],
+          systemInstruction: { parts: [{ text: systemInstructionText }] },
+          generationConfig: {
+            temperature: Math.min(Math.max(Number(settings.temperature) || 0.95, 0.0), 2.0),
+            maxOutputTokens: 2048,
+          },
+        };
+        return await callDirectRestApi(modelName, apiKey, payload);
+      } catch (restError: any) {
+        console.warn(`REST attempt for ${modelName} failed (${restError.message})`);
+        lastError = restError;
         continue;
       }
-      throw err;
     }
   }
 
-  throw lastError;
+  throw lastError || new Error("Не удалось получить ответ от моделей Gemini");
+}
+
+export async function testGeminiApiKey(
+  apiKey: string,
+  modelName: string = "gemini-2.0-flash"
+): Promise<{ ok: boolean; modelUsed: string; reply: string; durationMs: number; error?: string }> {
+  const cleanKey = apiKey.trim();
+  if (!cleanKey) {
+    return { ok: false, modelUsed: modelName, reply: "", durationMs: 0, error: "Ключ API пуст" };
+  }
+
+  const startTime = Date.now();
+  const testPrompt = "Ответь одним коротким словом 'Работает' если ты на связи.";
+
+  const modelsToTry = [
+    modelName,
+    ...CANDIDATE_MODELS.filter((m) => m !== modelName),
+  ];
+
+  let lastErrorMsg = "";
+  for (const m of modelsToTry) {
+    try {
+      const res = await callSdkGenerate(
+        m,
+        cleanKey,
+        "Ты тестовый бот. Отвечай кратко.",
+        testPrompt,
+        0.5
+      );
+      const durationMs = Date.now() - startTime;
+      return { ok: true, modelUsed: m, reply: res, durationMs };
+    } catch (e: any) {
+      lastErrorMsg = e.message;
+      try {
+        const payload = {
+          contents: [{ role: "user", parts: [{ text: testPrompt }] }],
+          generationConfig: { maxOutputTokens: 50 },
+        };
+        const res = await callDirectRestApi(m, cleanKey, payload);
+        const durationMs = Date.now() - startTime;
+        return { ok: true, modelUsed: m, reply: res, durationMs };
+      } catch (e2: any) {
+        lastErrorMsg = e2.message;
+      }
+    }
+  }
+
+  return {
+    ok: false,
+    modelUsed: modelName,
+    reply: "",
+    durationMs: Date.now() - startTime,
+    error: lastErrorMsg,
+  };
 }
 
 export async function generateCheckinMessage(
@@ -124,43 +204,30 @@ export async function generateCheckinMessage(
   chatTitle: string,
   settings: BotSettings
 ): Promise<string> {
-  const apiKey = settings.geminiApiKey || process.env.GEMINI_API_KEY;
+  const apiKey = (settings.geminiApiKey || process.env.GEMINI_API_KEY || "").trim();
   if (!apiKey) throw new Error("Gemini API key is not configured");
 
-  const requestedModel = settings.model || "gemini-3.6-flash";
-  const systemPrompt = settings.systemPrompt + `\n\nЗадача: написать спонтанное живое сообщение в чат "${chatTitle}" от лица Артёма. 1-2 предложения, строго в характере (строчные буквы, разговорный стиль).`;
-
-  const payload = {
-    contents: [
-      {
-        role: "user",
-        parts: [{ text: `Тематика чек-ина: ${promptHint}\nНапиши короткую реплику в чат:` }],
-      },
-    ],
-    systemInstruction: {
-      parts: [{ text: systemPrompt }],
-    },
-    generationConfig: {
-      temperature: Math.min(Math.max(Number(settings.temperature) || 1.0, 0.0), 2.0),
-      maxOutputTokens: 1024,
-    },
-  };
+  const requestedModel = settings.model || "gemini-2.0-flash";
+  const systemPrompt = settings.systemPrompt + `\n\nЗадача: написать спонтанное живое сообщение в чат "${chatTitle}" от лица Артёма. 1-2 предложения, строго в характере.`;
+  const promptBody = `Тематика чек-ина: ${promptHint}\nНапиши короткую реплику в чат:`;
 
   const modelsToTry = [
     requestedModel,
-    ...FALLBACK_MODELS.filter((m) => m !== requestedModel),
+    ...CANDIDATE_MODELS.filter((m) => m !== requestedModel),
   ];
 
   let lastError: any = null;
-  for (const model of modelsToTry) {
+  for (const m of modelsToTry) {
     try {
-      return await callGeminiApi(model, apiKey, payload);
+      return await callSdkGenerate(
+        m,
+        apiKey,
+        systemPrompt,
+        promptBody,
+        Number(settings.temperature) || 1.0
+      );
     } catch (err: any) {
       lastError = err;
-      if (err.status === 404 || err.status === 400 || err.status === 503 || err.status === 500 || err.status === 429) {
-        continue;
-      }
-      throw err;
     }
   }
 
@@ -169,9 +236,7 @@ export async function generateCheckinMessage(
 
 function cleanArtemOutput(text: string): string {
   let cleaned = text.trim();
-  // Strip accidental prefixes like "Артём: " or "Артем:"
   cleaned = cleaned.replace(/^арт[её]м:\s*/i, "");
-  // Strip quotes if the LLM wrapped everything in quotes
   if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
     cleaned = cleaned.slice(1, -1).trim();
   }

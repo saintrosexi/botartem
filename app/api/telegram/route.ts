@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSettings } from "@/lib/storage";
+import { testGeminiApiKey } from "@/lib/gemini";
 import {
   getBotInfo,
   getWebhookInfo,
@@ -16,26 +17,31 @@ export async function GET() {
     if (!token) {
       return NextResponse.json({
         ok: false,
-        configured: false,
-        error: "Токен Telegram бота не указан",
+        error: "Токен Telegram бота не настроен",
+        bot: null,
+        webhook: null,
       });
     }
 
-    const botInfo = await getBotInfo(token);
-    const webhookInfo = await getWebhookInfo(token);
+    const [botInfo, webhookInfo] = await Promise.allSettled([
+      getBotInfo(token),
+      getWebhookInfo(token),
+    ]);
 
     return NextResponse.json({
       ok: true,
-      configured: true,
-      bot: botInfo,
-      webhook: webhookInfo,
+      bot: botInfo.status === "fulfilled" ? botInfo.value : null,
+      webhook: webhookInfo.status === "fulfilled" ? webhookInfo.value : null,
+      botError: botInfo.status === "rejected" ? botInfo.reason.message : null,
+      webhookError: webhookInfo.status === "rejected" ? webhookInfo.reason.message : null,
     });
   } catch (error: any) {
     return NextResponse.json({
       ok: false,
-      configured: false,
-      error: error.message || "Ошибка подключения к Telegram Bot API",
-    });
+      error: error.message,
+      bot: null,
+      webhook: null,
+    }, { status: 500 });
   }
 }
 
@@ -43,13 +49,20 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const settings = await getSettings();
+    const action = body.action;
+
+    if (action === "testGeminiKey") {
+      const apiKey = body.apiKey || settings.geminiApiKey || process.env.GEMINI_API_KEY;
+      const model = body.model || settings.model || "gemini-2.0-flash";
+      const result = await testGeminiApiKey(apiKey, model);
+      return NextResponse.json(result);
+    }
+
     const token = settings.telegramToken || process.env.TELEGRAM_BOT_TOKEN;
 
     if (!token) {
       return NextResponse.json({ ok: false, error: "Токен Telegram бота не задан" }, { status: 400 });
     }
-
-    const action = body.action;
 
     if (action === "setWebhook") {
       const webhookUrl = body.webhookUrl;

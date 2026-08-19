@@ -174,15 +174,55 @@ export function BotApiConfig({
                 Получить бесплатно <ExternalLink className="w-3 h-3" />
               </a>
             </label>
-            <input
-              type={showTokens ? "text" : "password"}
-              value={settings.geminiApiKey || ""}
-              onChange={(e) => onChange({ geminiApiKey: e.target.value })}
-              placeholder="AIzaSy..."
-              className="w-full bg-[#090d16] border border-gray-700/80 focus:border-indigo-500 rounded-xl px-3.5 py-2.5 text-xs text-gray-200 font-mono focus:outline-none transition-all"
-            />
+            <div className="flex items-center gap-2">
+              <input
+                type={showTokens ? "text" : "password"}
+                value={settings.geminiApiKey || ""}
+                onChange={(e) => onChange({ geminiApiKey: e.target.value })}
+                placeholder="AIzaSy..."
+                className="flex-1 w-full bg-[#090d16] border border-gray-700/80 focus:border-indigo-500 rounded-xl px-3.5 py-2.5 text-xs text-gray-200 font-mono focus:outline-none transition-all"
+              />
+              <button
+                type="button"
+                onClick={async () => {
+                  setLoadingAction("testGemini");
+                  try {
+                    const res = await fetch("/api/telegram", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        action: "testGeminiKey",
+                        apiKey: settings.geminiApiKey,
+                        model: settings.model,
+                      }),
+                    });
+                    const data = await res.json();
+                    if (data.ok) {
+                      setFeedback({
+                        type: "success",
+                        text: `✅ Ключ Gemini работает отлично! Модель ${data.modelUsed} ответила за ${data.durationMs}ms: "${data.reply}"`,
+                      });
+                    } else {
+                      setFeedback({
+                        type: "error",
+                        text: `❌ Ошибка Gemini: ${data.error || "Не удалось получить ответ"}`,
+                      });
+                    }
+                  } catch (e: any) {
+                    setFeedback({ type: "error", text: `Ошибка: ${e.message}` });
+                  } finally {
+                    setLoadingAction(null);
+                  }
+                }}
+                disabled={loadingAction === "testGemini"}
+                className="px-3 py-2.5 bg-amber-950/80 hover:bg-amber-900 border border-amber-800/80 text-amber-200 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors disabled:opacity-50 flex items-center gap-1.5"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loadingAction === "testGemini" ? "animate-spin" : ""}`} />
+                <span>Проверить ключ</span>
+              </button>
+            </div>
             <p className="text-[11px] text-gray-400">
-              Бесплатный ключ от Google AI Studio (модели 2.5 Flash, 1.5 Flash).
+              Бесплатный ключ от Google AI Studio (модели 2.0 Flash, 1.5 Flash).
             </p>
           </div>
         </div>
