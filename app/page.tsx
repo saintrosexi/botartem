@@ -65,7 +65,22 @@ export default function DashboardPage() {
       if (setData.ok && setData.settings) {
         setIsKvConnected(Boolean(setData.isKvConfigured));
         setSettings((prev) => {
-          const merged = { ...prev, ...setData.settings };
+          // Keep user's custom prompt from localStorage if present and valid
+          const localCache = typeof window !== "undefined" ? localStorage.getItem("artem_settings_cache") : null;
+          let activePrompt = setData.settings.systemPrompt || DEFAULT_SYSTEM_PROMPT;
+          if (localCache) {
+            try {
+              const parsed = JSON.parse(localCache);
+              if (parsed.systemPrompt) {
+                activePrompt = parsed.systemPrompt;
+              }
+            } catch {}
+          }
+          const merged = {
+            ...setData.settings,
+            ...prev,
+            systemPrompt: activePrompt,
+          };
           try {
             localStorage.setItem("artem_settings_cache", JSON.stringify(merged));
           } catch {}

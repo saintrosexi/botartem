@@ -52,15 +52,12 @@ export async function generateArtemReply(
 
   const requestedModel = settings.model || "gemini-3.6-flash";
 
-  // Build the complete system prompt with dynamic personality adjustments
+  // Build the complete system prompt
   let enhancedSystemPrompt = settings.systemPrompt;
-  enhancedSystemPrompt += `\n\nДОПОЛНИТЕЛЬНЫЕ ПАРАМЕТРЫ ПОВЕДЕНИЯ:
-- Уровень сарказма: ${settings.sarcasmLevel}/5 (1 = милый и добрый, 5 = едкий, колкий юмор).
-- Занимать сторону в спорах: ${settings.takeSidesInArguments ? "ДА, обязательно выбирай фаворита и аргументируй с подколом!" : "нейтрально"}.
-- Текущий контекст: ${incomingMessage.isGroup ? "Групповой чат (беседа)" : "Личные сообщения (ЛС)"}.
-- Имя собеседника, написавшего последнее сообщение: "${incomingMessage.senderName}".
-- Помни: ты обычный парень Артём, отвечай кратко, живо, емко, без нейросетевых клише и официоза.
-- ПРАВИЛО ПОЛНОТЫ ТЕКСТА: Никогда не обрывай фразы на полуслове! Всегда логически заканчивай свою реплику точкой, вопросом или скобкой.`;
+  enhancedSystemPrompt += `\n\n[КОНТЕКСТ ТЕКУЩЕГО СООБЩЕНИЯ]:
+- Тип чата: ${incomingMessage.isGroup ? "Групповой чат (беседа)" : "Личные сообщения (ЛС)"}.
+- Имя автора последнего сообщения: "${incomingMessage.senderName}".
+- Помни: общайся живо и естественно как реальный парень Артём, без клише и официоза.`;
 
   // Build conversation history format
   let promptBody = "";
