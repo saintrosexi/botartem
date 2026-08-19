@@ -8,6 +8,7 @@ import { Sparkles, RotateCcw, Cpu, Flame, ThumbsUp, HelpCircle } from "lucide-re
 interface PromptSettingsProps {
   settings: BotSettings;
   onChange: (updated: Partial<BotSettings>) => void;
+  onReloadBot?: () => void;
 }
 
 const AVAILABLE_MODELS = [
@@ -17,7 +18,7 @@ const AVAILABLE_MODELS = [
   { id: "gemini-1.5-flash", name: "Gemini 1.5 Flash", badge: "1.5" },
 ];
 
-export function PromptSettings({ settings, onChange }: PromptSettingsProps) {
+export function PromptSettings({ settings, onChange, onReloadBot }: PromptSettingsProps) {
   const handleResetPrompt = () => {
     if (confirm("Сбросить системный промпт к эталонному характеру Артёма?")) {
       onChange({ systemPrompt: DEFAULT_SYSTEM_PROMPT });
@@ -45,6 +46,16 @@ export function PromptSettings({ settings, onChange }: PromptSettingsProps) {
             <span className="text-xs text-gray-400">
               {settings.systemPrompt?.length || 0} символов
             </span>
+            {onReloadBot && (
+              <button
+                onClick={onReloadBot}
+                title="Перезагрузить бота и применить промпт"
+                className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-indigo-200 hover:text-white bg-indigo-950/80 hover:bg-indigo-900 rounded-md border border-indigo-700/60 transition-colors"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Применить к боту</span>
+              </button>
+            )}
             <button
               onClick={handleResetPrompt}
               className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-gray-300 hover:text-white bg-gray-800 hover:bg-gray-700 rounded-md border border-gray-700 transition-colors"

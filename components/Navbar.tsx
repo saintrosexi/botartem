@@ -8,8 +8,10 @@ interface NavbarProps {
   webhookInfo: any;
   loading: boolean;
   saving: boolean;
+  reloading: boolean;
   autoSaveStatus: "saved" | "saving" | "idle";
   onSave: () => void;
+  onReloadBot: () => void;
   onOpenTestChat: () => void;
   onRefreshStatus: () => void;
 }
@@ -19,8 +21,10 @@ export function Navbar({
   webhookInfo,
   loading,
   saving,
+  reloading,
   autoSaveStatus,
   onSave,
+  onReloadBot,
   onOpenTestChat,
   onRefreshStatus,
 }: NavbarProps) {
@@ -85,12 +89,13 @@ export function Navbar({
         </div>
 
         <button
-          onClick={onRefreshStatus}
-          disabled={loading}
-          title="Обновить статус"
-          className="p-2 text-gray-400 hover:text-gray-200 bg-gray-900/60 hover:bg-gray-800 rounded-lg border border-gray-800 transition-all disabled:opacity-50"
+          onClick={onReloadBot}
+          disabled={reloading}
+          title="Применить новый промпт и перезагрузить бота"
+          className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-indigo-950/90 hover:bg-indigo-900 text-indigo-200 hover:text-white rounded-lg border border-indigo-700/60 transition-all shadow-sm disabled:opacity-50"
         >
-          <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+          <RefreshCw className={`w-3.5 h-3.5 ${reloading ? "animate-spin text-indigo-400" : "text-indigo-300"}`} />
+          <span>{reloading ? "Перезагрузка..." : "Перезагрузить бота"}</span>
         </button>
 
         <button

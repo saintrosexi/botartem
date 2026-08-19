@@ -17,6 +17,7 @@ export default function DashboardPage() {
   const [isTestChatOpen, setIsTestChatOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [reloading, setReloading] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState<"saved" | "saving" | "idle">("saved");
   const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [isKvConnected, setIsKvConnected] = useState(false);
@@ -159,6 +160,45 @@ export default function DashboardPage() {
     }
   };
 
+  const handleReloadBot = async () => {
+    setReloading(true);
+    setToast(null);
+    try {
+      // 1. Save settings
+      await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(settings),
+      });
+
+      // 2. Trigger bot reload & sync
+      const res = await fetch("/api/telegram", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reloadBot" }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setBotInfo(data.bot);
+        setWebhookInfo(data.webhook);
+        setToast({
+          type: "success",
+          message: "🔄 Бот успешно перезагружен! Новый промпт и все параметры активированы.",
+        });
+      } else {
+        setToast({
+          type: "error",
+          message: `Ошибка перезагрузки: ${data.error || "Не удалось перезагрузить бота"}`,
+        });
+      }
+    } catch (e: any) {
+      setToast({ type: "error", message: `Ошибка сети: ${e.message}` });
+    } finally {
+      setReloading(false);
+      setTimeout(() => setToast(null), 5000);
+    }
+  };
+
   // Export / Import
   const handleExportJson = () => {
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(settings, null, 2));
@@ -211,8 +251,10 @@ export default function DashboardPage() {
         webhookInfo={webhookInfo}
         loading={loading}
         saving={saving}
+        reloading={reloading}
         autoSaveStatus={autoSaveStatus}
         onSave={handleSave}
+        onReloadBot={handleReloadBot}
         onOpenTestChat={() => setIsTestChatOpen(true)}
         onRefreshStatus={fetchData}
       />
@@ -294,7 +336,7 @@ export default function DashboardPage() {
         {/* Tab Content */}
         <div className="animate-fadeIn">
           {activeTab === "prompt" && (
-            <PromptSettings settings={settings} onChange={handleUpdateSettings} />
+            <PromptSettings settings={settings} onChange={handleUpdateSettings} onReloadBot={handleReloadBot} />
           )}
 
           {activeTab === "behavior" && (

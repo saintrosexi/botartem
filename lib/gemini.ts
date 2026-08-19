@@ -59,7 +59,8 @@ export async function generateArtemReply(
 - Занимать сторону в спорах: ${settings.takeSidesInArguments ? "ДА, обязательно выбирай фаворита и аргументируй с подколом!" : "нейтрально"}.
 - Текущий контекст: ${incomingMessage.isGroup ? "Групповой чат (беседа)" : "Личные сообщения (ЛС)"}.
 - Имя собеседника, написавшего последнее сообщение: "${incomingMessage.senderName}".
-- Помни: ты обычный парень Артём, отвечай кратко, живо, емко, без нейросетевых клише и официоза.`;
+- Помни: ты обычный парень Артём, отвечай кратко, живо, емко, без нейросетевых клише и официоза.
+- ПРАВИЛО ПОЛНОТЫ ТЕКСТА: Никогда не обрывай фразы на полуслове! Всегда логически заканчивай свою реплику точкой, вопросом или скобкой.`;
 
   // Build conversation history format
   let promptBody = "";
@@ -93,7 +94,7 @@ export async function generateArtemReply(
     },
     generationConfig: {
       temperature: Math.min(Math.max(Number(settings.temperature) || 0.95, 0.0), 2.0),
-      maxOutputTokens: 600,
+      maxOutputTokens: 2048,
       topP: 0.95,
     },
   };
@@ -145,7 +146,7 @@ export async function generateCheckinMessage(
     },
     generationConfig: {
       temperature: Math.min(Math.max(Number(settings.temperature) || 1.0, 0.0), 2.0),
-      maxOutputTokens: 250,
+      maxOutputTokens: 1024,
     },
   };
 

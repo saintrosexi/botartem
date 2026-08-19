@@ -66,6 +66,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, result: res });
     }
 
+    if (action === "reloadBot") {
+      const botInfo = await getBotInfo(token);
+      const webhookInfo = await getWebhookInfo(token);
+      return NextResponse.json({
+        ok: true,
+        message: "Бот успешно перезагружен и синхронизирован!",
+        bot: botInfo,
+        webhook: webhookInfo,
+      });
+    }
+
     if (action === "testMessage") {
       const chatId = body.chatId;
       const text = body.text || "Здорово! Это тестовое сообщение от Артёма ✌️";
