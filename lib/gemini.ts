@@ -100,10 +100,13 @@ export async function generateArtemReply(
 
   // System prompt and context
   let systemInstructionText = settings.systemPrompt;
-  systemInstructionText += `\n\n[КОНТЕКСТ ТЕКУЩЕГО СООБЩЕНИЯ]:
+  systemInstructionText += `\n\n[ВАЖНЕЙШЕЕ ПРАВИЛО ФОРМАТА ОТВЕТА]:
+- Выводи ТОЛЬКО готовую реплику Артёма в чат!
+- КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО писать свои размышления, анализ контекста, списки вариантов (Option 1/2), "Chat Type:", "My role:", "Let's go with..." и любые мысли вслух!
+- Сразу пиши чистый текст сообщения для чата.
 - Тип чата: ${incomingMessage.isGroup ? "Групповой чат (беседа)" : "Личные сообщения (ЛС)"}.
 - Имя собеседника: "${incomingMessage.senderName}".
-- Помни: общайся живо, по-настоящему, без шаблонов ассистента. Если в беседе ответ неуместен, ответь ровно [SILENT]`;
+- Если в беседе ответ неуместен, ответь ровно одним словом [SILENT]`;
 
   // Format conversation history
   let promptBody = "";
@@ -267,9 +270,64 @@ export async function generateCheckinMessage(
 
 function cleanArtemOutput(text: string): string {
   let cleaned = text.trim();
-  cleaned = cleaned.replace(/^арт[её]м:\s*/i, "");
-  if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
-    cleaned = cleaned.slice(1, -1).trim();
+
+  // 1. Remove XML/HTML thought tags
+  cleaned = cleaned.replace(/<thought[\s\S]*?<\/thought>/gi, "").trim();
+  cleaned = cleaned.replace(/<think[\s\S]*?<\/think>/gi, "").trim();
+
+  // 2. If the model output contains chain-of-thought analysis
+  if (
+    cleaned.includes("Chat Type:") ||
+    cleaned.includes("My role:") ||
+    cleaned.includes("Option 1:") ||
+    cleaned.includes("Let's go with") ||
+    cleaned.includes("Thinking Process:") ||
+    cleaned.includes("Let's refine:") ||
+    cleaned.includes("Let's try:") ||
+    (cleaned.includes("*   ") && (cleaned.includes("Option") || cleaned.includes("react") || cleaned.includes("role:")))
+  ) {
+    const lines = cleaned.split("\n");
+    const candidates: string[] = [];
+
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i].trim();
+      if (!line) continue;
+
+      const isThought =
+        line.startsWith("*") ||
+        line.startsWith("-") ||
+        line.startsWith("•") ||
+        line.toLowerCase().startsWith("let's") ||
+        line.toLowerCase().startsWith("option") ||
+        line.toLowerCase().startsWith("wait,") ||
+        line.toLowerCase().startsWith("actually,") ||
+        line.toLowerCase().startsWith("chat type:") ||
+        line.toLowerCase().startsWith("my role:") ||
+        line.toLowerCase().startsWith("thinking");
+
+      if (!isThought) {
+        candidates.unshift(line);
+        if (candidates.length >= 1) {
+          break;
+        }
+      }
+    }
+
+    if (candidates.length > 0) {
+      cleaned = candidates.join("\n").trim();
+    }
   }
+
+  // 3. Strip quotes and repeated output like "чё?"чё?
+  cleaned = cleaned.replace(/^["'«»]+|["'«»]+$/g, "").trim();
+  const doubleMatch = cleaned.match(/^([^\s]+)\1$/i);
+  if (doubleMatch) {
+    cleaned = doubleMatch[1];
+  }
+
+  // 4. Strip prefixes like "Артём: " or "Артем: " or "Ответ: "
+  cleaned = cleaned.replace(/^(арт[её]м|artem|ответ|реплика):\s*/i, "").trim();
+  cleaned = cleaned.replace(/^["'«»]+|["'«»]+$/g, "").trim();
+
   return cleaned;
 }
