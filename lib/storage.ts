@@ -5,7 +5,7 @@ import { DEFAULT_SYSTEM_PROMPT, DEFAULT_CHECKINS } from "./default-prompt";
 const initialSettings: BotSettings = {
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   temperature: 0.95,
-  model: "gemini-2.5-flash",
+  model: "gemini-3.6-flash",
   botName: "Артём",
   triggerKeywords: ["артём", "артем", "тёма", "тема", "artem", "артёмка", "артемка"],
   randomReplyChance: 8, // 8% chance to chime into active chat unprovoked

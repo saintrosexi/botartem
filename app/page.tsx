@@ -22,7 +22,7 @@ export default function DashboardPage() {
   const [settings, setSettings] = useState<BotSettings>({
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
     temperature: 0.95,
-    model: "gemini-2.5-flash",
+    model: "gemini-3.6-flash",
     botName: "Артём",
     triggerKeywords: ["артём", "артем", "тёма", "тема", "artem", "артёмка", "артемка"],
     randomReplyChance: 8,

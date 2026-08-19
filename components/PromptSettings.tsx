@@ -11,10 +11,10 @@ interface PromptSettingsProps {
 }
 
 const AVAILABLE_MODELS = [
-  { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash (Рекомендуется, самый быстрый и живой)", badge: "Рекомендуется" },
-  { id: "gemini-1.5-flash", name: "Gemini 1.5 Flash (Быстрый, стабильный)", badge: "Стандарт" },
-  { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro (Продвинутый, глубокий контекст)", badge: "Pro" },
-  { id: "gemini-1.5-pro", name: "Gemini 1.5 Pro (Классический Pro)", badge: "Pro" },
+  { id: "gemini-3.6-flash", name: "Gemini 3.6 Flash (Рекомендуется, самый быстрый и живой)", badge: "Рекомендуется" },
+  { id: "gemini-3.6-pro", name: "Gemini 3.6 Pro (Продвинутый, глубокий контекст)", badge: "Pro" },
+  { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", badge: "2.5" },
+  { id: "gemini-1.5-flash", name: "Gemini 1.5 Flash", badge: "1.5" },
 ];
 
 export function PromptSettings({ settings, onChange }: PromptSettingsProps) {

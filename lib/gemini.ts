@@ -6,6 +6,40 @@ export interface ContextMessage {
   isBot?: boolean;
 }
 
+const FALLBACK_MODELS = [
+  "gemini-3.6-flash",
+  "gemini-3.5-flash",
+  "gemini-3-flash",
+  "gemini-2.5-flash",
+  "gemini-1.5-flash",
+];
+
+async function callGeminiApi(
+  model: string,
+  apiKey: string,
+  payload: any
+): Promise<string> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${apiKey}`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    const err = new Error(`Gemini API error (${response.status}): ${errText}`);
+    (err as any).status = response.status;
+    (err as any).errorBody = errText;
+    throw err;
+  }
+
+  const data = await response.json();
+  const candidate = data.candidates?.[0];
+  const replyText = candidate?.content?.parts?.[0]?.text || "";
+  return cleanArtemOutput(replyText);
+}
+
 export async function generateArtemReply(
   context: ContextMessage[],
   incomingMessage: { senderName: string; text: string; isReplyToBot?: boolean; isGroup?: boolean },
@@ -16,8 +50,7 @@ export async function generateArtemReply(
     throw new Error("Gemini API key is not configured. Please set it in the Admin Dashboard or .env file.");
   }
 
-  // Model name (default to gemini-2.5-flash or gemini-1.5-flash)
-  const modelName = settings.model || "gemini-2.5-flash";
+  const requestedModel = settings.model || "gemini-3.6-flash";
 
   // Build the complete system prompt with dynamic personality adjustments
   let enhancedSystemPrompt = settings.systemPrompt;
@@ -65,43 +98,28 @@ export async function generateArtemReply(
     },
   };
 
-  try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelName)}:generateContent?key=${apiKey}`;
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+  // Try requested model first, then fallback models in order
+  const modelsToTry = [
+    requestedModel,
+    ...FALLBACK_MODELS.filter((m) => m !== requestedModel),
+  ];
 
-    if (!response.ok) {
-      const errText = await response.text();
-      // If gemini-2.5-flash is not yet accessible on specific endpoint or key, try falling back to gemini-1.5-flash
-      if (modelName !== "gemini-1.5-flash" && (response.status === 404 || response.status === 400)) {
-        console.warn(`Model ${modelName} returned ${response.status}, retrying with gemini-1.5-flash...`);
-        const fallbackUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-        const fallbackRes = await fetch(fallbackUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        if (fallbackRes.ok) {
-          const fallbackData = await fallbackRes.json();
-          const replyText = fallbackData.candidates?.[0]?.content?.parts?.[0]?.text || "";
-          return cleanArtemOutput(replyText);
-        }
+  let lastError: any = null;
+  for (const model of modelsToTry) {
+    try {
+      return await callGeminiApi(model, apiKey, payload);
+    } catch (err: any) {
+      lastError = err;
+      if (err.status === 404 || err.status === 400) {
+        console.warn(`Model ${model} failed (${err.status}), attempting fallback...`);
+        continue;
       }
-      throw new Error(`Gemini API error (${response.status}): ${errText}`);
+      // If it's auth/quota error (401, 403, 429), throw immediately
+      throw err;
     }
-
-    const data = await response.json();
-    const candidate = data.candidates?.[0];
-    const replyText = candidate?.content?.parts?.[0]?.text || "";
-
-    return cleanArtemOutput(replyText);
-  } catch (error: any) {
-    console.error("Error generating Gemini response:", error);
-    throw error;
   }
+
+  throw lastError;
 }
 
 export async function generateCheckinMessage(
@@ -112,7 +130,7 @@ export async function generateCheckinMessage(
   const apiKey = settings.geminiApiKey || process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("Gemini API key is not configured");
 
-  const modelName = settings.model || "gemini-2.5-flash";
+  const requestedModel = settings.model || "gemini-3.6-flash";
   const systemPrompt = settings.systemPrompt + `\n\nЗадача: написать спонтанное живое сообщение в чат "${chatTitle}" от лица Артёма. 1-2 предложения, строго в характере (строчные буквы, разговорный стиль).`;
 
   const payload = {
@@ -131,31 +149,25 @@ export async function generateCheckinMessage(
     },
   };
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelName)}:generateContent?key=${apiKey}`;
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  const modelsToTry = [
+    requestedModel,
+    ...FALLBACK_MODELS.filter((m) => m !== requestedModel),
+  ];
 
-  if (!response.ok) {
-    // fallback
-    const fallbackUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-    const fbRes = await fetch(fallbackUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (fbRes.ok) {
-      const fbData = await fbRes.json();
-      return cleanArtemOutput(fbData.candidates?.[0]?.content?.parts?.[0]?.text || "ну че как вы тут");
+  let lastError: any = null;
+  for (const model of modelsToTry) {
+    try {
+      return await callGeminiApi(model, apiKey, payload);
+    } catch (err: any) {
+      lastError = err;
+      if (err.status === 404 || err.status === 400) {
+        continue;
+      }
+      throw err;
     }
-    throw new Error(`Failed to generate check-in: ${await response.text()}`);
   }
 
-  const data = await response.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-  return cleanArtemOutput(text);
+  throw lastError;
 }
 
 function cleanArtemOutput(text: string): string {
