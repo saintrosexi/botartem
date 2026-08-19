@@ -51,13 +51,14 @@ async function callSdkGenerate(
     generationConfig: {
       temperature: Math.min(Math.max(temperature || 0.95, 0.0), 2.0),
       maxOutputTokens: 2048,
+      responseMimeType: "application/json",
     },
   });
 
   const result = await model.generateContent(promptBody);
   const response = await result.response;
   const text = response.text();
-  return cleanArtemOutput(text);
+  return extractJsonReply(text);
 }
 
 async function callDirectRestApi(
@@ -83,7 +84,7 @@ async function callDirectRestApi(
   const data = await response.json();
   const candidate = data.candidates?.[0];
   const replyText = candidate?.content?.parts?.[0]?.text || "";
-  return cleanArtemOutput(replyText);
+  return extractJsonReply(replyText);
 }
 
 export async function generateArtemReply(
@@ -98,20 +99,18 @@ export async function generateArtemReply(
 
   const requestedModel = (settings.model || "gemini-3.6-flash").trim();
 
-  // System prompt and context
+  // System prompt and context with JSON enforcement
   let systemInstructionText = settings.systemPrompt;
-  systemInstructionText += `\n\n[ВАЖНЕЙШЕЕ ПРАВИЛО ФОРМАТА ОТВЕТА]:
-- Выводи ТОЛЬКО готовую реплику Артёма в чат!
-- КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО писать свои размышления, анализ контекста, списки вариантов (Option 1/2), "Chat Type:", "My role:", "Let's go with..." и любые мысли вслух!
-- Сразу пиши чистый текст сообщения для чата.
-- Тип чата: ${incomingMessage.isGroup ? "Групповой чат (беседа)" : "Личные сообщения (ЛС)"}.
-- Имя собеседника: "${incomingMessage.senderName}".
-- Если в беседе ответ неуместен, ответь ровно одним словом [SILENT]`;
+  systemInstructionText += `\n\n[СТРОГИЙ ФОРМАТ ВЫВОДА - ТОЛЬКО JSON]:
+- Ответ ОБЯЗАТЕЛЬНО должен быть валидным JSON-объектом в формате: {"reply": "текст реплики Артёма"}
+- В поле "reply" запиши ТОЛЬКО саму итоговую реплику Артёма для отправки в чат (без лишних кавычек, без мыслей, без дублирования).
+- Если отвечать в беседе сейчас неуместно, верни: {"reply": "[SILENT]"}
+- Контекст: ${incomingMessage.isGroup ? "Групповой чат" : "Личные сообщения (ЛС)"}, собеседник: "${incomingMessage.senderName}".`;
 
   // Format conversation history
   let promptBody = "";
   if (context.length > 0) {
-    promptBody += "--- Последние сообщения в чате (контекст):\n";
+    promptBody += "--- История последних сообщений в чате:\n";
     for (const msg of context.slice(-settings.maxContextMessages)) {
       if (msg.isBot) {
         promptBody += `Артём: ${msg.text}\n`;
@@ -124,9 +123,9 @@ export async function generateArtemReply(
 
   promptBody += `Сообщение от ${incomingMessage.senderName}: "${incomingMessage.text}"\n`;
   if (incomingMessage.isReplyToBot) {
-    promptBody += `(Это сообщение является прямым ответом на твою реплику)\n`;
+    promptBody += `(Это ответ на твою предыдущую реплику)\n`;
   }
-  promptBody += `\nТвой ответ (как Артём):`;
+  promptBody += `\nСформируй JSON-ответ {"reply": "..."}:`;
 
   // Query dynamic available models
   const dynamicList = await getDynamicModels(apiKey);
@@ -160,6 +159,7 @@ export async function generateArtemReply(
           generationConfig: {
             temperature: Math.min(Math.max(Number(settings.temperature) || 0.95, 0.0), 2.0),
             maxOutputTokens: 2048,
+            responseMimeType: "application/json",
           },
         };
         return await callDirectRestApi(modelName, apiKey, payload);
@@ -184,7 +184,7 @@ export async function testGeminiApiKey(
   }
 
   const startTime = Date.now();
-  const testPrompt = "Ответь одним коротким словом 'Работает' если ты на связи.";
+  const testPrompt = 'Верни JSON в формате {"reply": "Работает"}';
 
   const dynamicList = await getDynamicModels(cleanKey);
   const modelsToTry = [
@@ -199,7 +199,7 @@ export async function testGeminiApiKey(
       const res = await callSdkGenerate(
         m,
         cleanKey,
-        "Ты тестовый бот. Отвечай кратко.",
+        'Ты тестовый бот. Верни только JSON {"reply": "Работает"}',
         testPrompt,
         0.5
       );
@@ -210,7 +210,7 @@ export async function testGeminiApiKey(
       try {
         const payload = {
           contents: [{ role: "user", parts: [{ text: testPrompt }] }],
-          generationConfig: { maxOutputTokens: 50 },
+          generationConfig: { maxOutputTokens: 100, responseMimeType: "application/json" },
         };
         const res = await callDirectRestApi(m, cleanKey, payload);
         const durationMs = Date.now() - startTime;
@@ -240,8 +240,8 @@ export async function generateCheckinMessage(
   if (!apiKey) throw new Error("Gemini API key is not configured");
 
   const requestedModel = settings.model || "gemini-3.6-flash";
-  const systemPrompt = settings.systemPrompt + `\n\nЗадача: написать спонтанное живое сообщение в чат "${chatTitle}" от лица Артёма. 1-2 предложения, строго в характере.`;
-  const promptBody = `Тематика чек-ина: ${promptHint}\nНапиши короткую реплику в чат:`;
+  const systemPrompt = settings.systemPrompt + `\n\nЗадача: написать спонтанное живое сообщение в чат "${chatTitle}" от лица Артёма. 1-2 предложения, строго в формате JSON {"reply": "..."}`;
+  const promptBody = `Тематика чек-ина: ${promptHint}\nВерни JSON {"reply": "..."}:`;
 
   const dynamicList = await getDynamicModels(apiKey);
   const modelsToTry = [
@@ -268,64 +268,42 @@ export async function generateCheckinMessage(
   throw lastError;
 }
 
+function extractJsonReply(rawText: string): string {
+  let text = rawText.trim();
+  // Strip markdown code blocks
+  text = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed.reply === "string") {
+      return cleanArtemOutput(parsed.reply);
+    }
+  } catch {}
+
+  const replyMatch = text.match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+  if (replyMatch) {
+    try {
+      const unescaped = JSON.parse(`"${replyMatch[1]}"`);
+      return cleanArtemOutput(unescaped);
+    } catch {
+      return cleanArtemOutput(replyMatch[1]);
+    }
+  }
+
+  return cleanArtemOutput(text);
+}
+
 function cleanArtemOutput(text: string): string {
   let cleaned = text.trim();
 
-  // 1. Remove XML/HTML thought tags
+  // Strip XML/HTML thought tags
   cleaned = cleaned.replace(/<thought[\s\S]*?<\/thought>/gi, "").trim();
   cleaned = cleaned.replace(/<think[\s\S]*?<\/think>/gi, "").trim();
 
-  // 2. If the model output contains chain-of-thought analysis
-  if (
-    cleaned.includes("Chat Type:") ||
-    cleaned.includes("My role:") ||
-    cleaned.includes("Option 1:") ||
-    cleaned.includes("Let's go with") ||
-    cleaned.includes("Thinking Process:") ||
-    cleaned.includes("Let's refine:") ||
-    cleaned.includes("Let's try:") ||
-    (cleaned.includes("*   ") && (cleaned.includes("Option") || cleaned.includes("react") || cleaned.includes("role:")))
-  ) {
-    const lines = cleaned.split("\n");
-    const candidates: string[] = [];
-
-    for (let i = lines.length - 1; i >= 0; i--) {
-      const line = lines[i].trim();
-      if (!line) continue;
-
-      const isThought =
-        line.startsWith("*") ||
-        line.startsWith("-") ||
-        line.startsWith("•") ||
-        line.toLowerCase().startsWith("let's") ||
-        line.toLowerCase().startsWith("option") ||
-        line.toLowerCase().startsWith("wait,") ||
-        line.toLowerCase().startsWith("actually,") ||
-        line.toLowerCase().startsWith("chat type:") ||
-        line.toLowerCase().startsWith("my role:") ||
-        line.toLowerCase().startsWith("thinking");
-
-      if (!isThought) {
-        candidates.unshift(line);
-        if (candidates.length >= 1) {
-          break;
-        }
-      }
-    }
-
-    if (candidates.length > 0) {
-      cleaned = candidates.join("\n").trim();
-    }
-  }
-
-  // 3. Strip quotes and repeated output like "чё?"чё?
+  // Strip accidental outer quotes
   cleaned = cleaned.replace(/^["'«»]+|["'«»]+$/g, "").trim();
-  const doubleMatch = cleaned.match(/^([^\s]+)\1$/i);
-  if (doubleMatch) {
-    cleaned = doubleMatch[1];
-  }
 
-  // 4. Strip prefixes like "Артём: " or "Артем: " or "Ответ: "
+  // Strip prefixes
   cleaned = cleaned.replace(/^(арт[её]м|artem|ответ|реплика):\s*/i, "").trim();
   cleaned = cleaned.replace(/^["'«»]+|["'«»]+$/g, "").trim();
 
