@@ -80,6 +80,10 @@ async function kvSet<T>(key: string, value: T): Promise<boolean> {
   }
 }
 
+export function isKvConfigured(): boolean {
+  return Boolean(KV_URL && KV_TOKEN);
+}
+
 export async function getSettings(): Promise<BotSettings> {
   // Try remote KV if available
   const remote = await kvGet<Partial<BotSettings>>("artem_settings");

@@ -8,6 +8,7 @@ interface NavbarProps {
   webhookInfo: any;
   loading: boolean;
   saving: boolean;
+  autoSaveStatus: "saved" | "saving" | "idle";
   onSave: () => void;
   onOpenTestChat: () => void;
   onRefreshStatus: () => void;
@@ -18,6 +19,7 @@ export function Navbar({
   webhookInfo,
   loading,
   saving,
+  autoSaveStatus,
   onSave,
   onOpenTestChat,
   onRefreshStatus,
@@ -67,6 +69,21 @@ export function Navbar({
       </div>
 
       <div className="flex items-center gap-2.5">
+        <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-900/80 border border-gray-800 text-[11px] font-medium text-gray-300">
+          <span
+            className={`w-2 h-2 rounded-full ${
+              autoSaveStatus === "saving"
+                ? "bg-amber-400 animate-spin"
+                : "bg-emerald-400 animate-pulse"
+            }`}
+          />
+          <span>
+            {autoSaveStatus === "saving"
+              ? "Автосохранение..."
+              : "Изменения сохраняются на лету"}
+          </span>
+        </div>
+
         <button
           onClick={onRefreshStatus}
           disabled={loading}
@@ -90,7 +107,7 @@ export function Navbar({
           className="flex items-center gap-2 px-4 py-2 text-xs font-semibold bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white rounded-lg shadow-md shadow-indigo-600/30 transition-all disabled:opacity-60"
         >
           <Save className="w-4 h-4" />
-          <span>{saving ? "Сохранение..." : "Сохранить всё"}</span>
+          <span>{saving ? "Сохранение..." : "Сохранить вручную"}</span>
         </button>
       </div>
     </header>

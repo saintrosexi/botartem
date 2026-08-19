@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSettings, updateSettings } from "@/lib/storage";
+import { getSettings, updateSettings, isKvConfigured } from "@/lib/storage";
 
 export async function GET() {
   try {
     const settings = await getSettings();
     return NextResponse.json({
       ok: true,
+      isKvConfigured: isKvConfigured(),
       settings: {
         ...settings,
-        // Mask secret tokens for safety if requested
         hasTelegramToken: Boolean(settings.telegramToken),
         hasGeminiKey: Boolean(settings.geminiApiKey),
       },
